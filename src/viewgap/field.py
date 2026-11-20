@@ -47,6 +47,7 @@ class FieldConfig:
     lr_grid: float = 0.03
     lr_net: float = 0.004
     tv_weight: float = 1e-4
+    view_dependent: bool = True      # False: colour ignores the viewing direction (experiment E4)
 
 
 class Field(nn.Module):
@@ -90,7 +91,8 @@ class Field(nn.Module):
     def forward(self, x: torch.Tensor, d: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         h = self.geo(self.features(x))
         sigma = F.softplus(h[:, 0] - 1.0) * 25.0
-        rgb = torch.sigmoid(self.col(torch.cat([h[:, 1:], _sh2(d)], dim=1)))
+        enc = _sh2(d) if self.cfg.view_dependent else torch.zeros(d.shape[0], 9)
+        rgb = torch.sigmoid(self.col(torch.cat([h[:, 1:], enc], dim=1)))
         return sigma, rgb
 
     def tv(self) -> torch.Tensor:

@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import multiprocessing as mp
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -36,16 +36,19 @@ class Run:
     seed: int
     n_train: int = N_TRAIN_FULL
     poses: str = "true"
+    colour: str = "view"             # "view": colour depends on viewing direction; "diffuse": it does not
 
     @property
     def run_id(self) -> str:
-        return f"{self.scene}-{self.design}-s{self.seed}-n{self.n_train}-{self.poses}"
+        base = f"{self.scene}-{self.design}-s{self.seed}-n{self.n_train}-{self.poses}"
+        return base if self.colour == "view" else f"{base}-{self.colour}"
 
 
 def matrix() -> list[Run]:
     runs = [Run(sc, de, se) for sc in SCENES for de in DESIGNS for se in SEEDS]                 # E1
     runs += [Run(sc, de, 0, n) for sc in SCENES for de in DESIGNS for n in SPARSE_COUNTS]       # E2
     runs += [Run(sc, de, 0, poses="sfm") for sc in SCENES for de in DESIGNS]                    # E3
+    runs += [Run(sc, de, 0, colour="diffuse") for sc in SCENES for de in DESIGNS]               # E4, added later
     return runs
 
 
@@ -60,6 +63,7 @@ def run_one(run: Run, cfg: FieldConfig = FieldConfig(), threads: int = 4) -> pd.
     import torch
 
     torch.set_num_threads(threads)
+    cfg = replace(cfg, view_dependent=run.colour == "view")
     d = data.load(run.scene, data.FIELD_SIZE)
     true_c2w = d["c2w"]
     train, test = cameras_for(run)
@@ -93,7 +97,7 @@ def run_one(run: Run, cfg: FieldConfig = FieldConfig(), threads: int = 4) -> pd.
                 renders[int(v)] = (rgb, depth, acc)
     df = pd.DataFrame(rows)
 
-    if run.seed == 0 and run.n_train == N_TRAIN_FULL and run.poses == "true":
+    if run.seed == 0 and run.n_train == N_TRAIN_FULL and run.poses == "true" and run.colour == "view":
         t = df[df.role == "test"].sort_values("psnr")
         picks = {"worst": int(t.view.iloc[0]), "median": int(t.view.iloc[len(t) // 2])}
         out = RESULTS / "examples"
@@ -139,7 +143,17 @@ METRICS = ("psnr", "ssim", "depth_mae", "iou")
 
 def load_views() -> pd.DataFrame:
     files = sorted((RESULTS / "runs").glob("*.parquet"))
-    return pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
+    views = pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
+    if "colour" not in views:
+        views["colour"] = "view"
+    views["colour"] = views["colour"].fillna("view")     # runs written before E4 existed
+    return views
+
+
+def load_main() -> pd.DataFrame:
+    """Views from the planned experiments E1 to E3 (the view-dependent model)."""
+    views = load_views()
+    return views[views.colour == "view"].reset_index(drop=True)
 
 
 def _boot_ci(values: np.ndarray, rng: np.random.Generator, n: int = 5000) -> list[float]:
@@ -157,7 +171,8 @@ def summarise() -> dict:
     kept paired inside each resample.
     """
     rng = np.random.default_rng(0)
-    views = load_views()
+    everything = load_views()
+    views = everything[everything.colour == "view"]
     test = views[views.role == "test"]
     per_run = test.groupby(["scene", "design", "seed", "n_train", "poses"], as_index=False)[list(METRICS)].mean()
     out: dict = {"n_runs": int(views.run_id.nunique()), "n_test_views": int(len(test)),
@@ -225,6 +240,25 @@ def summarise() -> dict:
                                    "max": float((w3["psnr"]["true"] - w3["psnr"]["sfm"]).max())},
                      "sfm": {sc: json.loads((RESULTS / "sfm" / f"{sc}.json").read_text()) for sc in SCENES
                              if (RESULTS / "sfm" / f"{sc}.json").exists()}}
+
+    # E4 (added after the planned results were in): the same seed-0 runs with colour that ignores
+    # the viewing direction, to see how much of the gap view-dependent colour is responsible for.
+    e4 = everything[(everything.role == "test") & (everything.seed == 0) & (everything.poses == "true")
+                    & (everything.n_train == N_TRAIN_FULL)]
+    if (e4.colour == "diffuse").any():
+        r4 = e4.groupby(["scene", "design", "colour"])[list(METRICS)].mean()
+        rows = []
+        for sc in SCENES:
+            row = {"scene": sc}
+            for co in ("view", "diffuse"):
+                for de in DESIGNS:
+                    row[f"psnr_{co}_{de}"] = float(r4.loc[(sc, de, co), "psnr"])
+                    row[f"depth_mae_{co}_{de}"] = float(r4.loc[(sc, de, co), "depth_mae"])
+                row[f"gap_{co}"] = row[f"psnr_{co}_random"] - row[f"psnr_{co}_cap"]
+            rows.append(row)
+        out["e4"] = {"rows": rows, "gap_view": float(np.mean([r["gap_view"] for r in rows])),
+                     "gap_diffuse": float(np.mean([r["gap_diffuse"] for r in rows]))}
+        out["n_runs"] = int(everything.run_id.nunique())
     (RESULTS / "summary.json").write_text(json.dumps(out, indent=2))
     per_run.to_csv(RESULTS / "per_run.csv", index=False)
     return out

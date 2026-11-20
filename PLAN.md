@@ -64,4 +64,19 @@ Each of these can fail, and a failed one will be reported as failed.
 
 ## Amendments
 
-None yet.
+Made on 20 November 2026, after the 42 planned runs had finished and been read.
+
+1. **E4 added.** H3 failed: the held-out patch cost image quality but hardly any depth
+   accuracy. To check one explanation (that colour which depends on viewing direction
+   extrapolates badly), six more runs were trained with colour that ignores viewing
+   direction: 3 scenes x 2 designs, seed 0, 96 views, true poses. This experiment was
+   chosen after seeing the results and is exploratory. It is reported separately and no
+   planned number depends on it.
+2. **H4 had no margin.** The plan said "larger" without saying by how much, and E2 has one
+   seed. The report treats a difference smaller than the seed-to-seed spread seen in E1 as
+   no evidence either way.
+3. **H5 did not say "mean" or "every run".** The report gives both readings.
+
+Nothing else changed: the model, the training recipe, the splits, the metrics and the
+analysis code for E1 to E3 are as they were when the plan was written. Figure layout
+(label positions, spacing) was adjusted after the results were in.

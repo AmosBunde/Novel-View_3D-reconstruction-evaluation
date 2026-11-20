@@ -14,7 +14,7 @@ from . import data  # noqa: E402
 from .cameras import view_directions  # noqa: E402
 from .scenes import SCENES  # noqa: E402
 from .splits import DESIGNS, split  # noqa: E402
-from .suite import N_TEST, N_TRAIN_FULL, RESULTS, load_views  # noqa: E402
+from .suite import N_TEST, N_TRAIN_FULL, RESULTS, load_main  # noqa: E402
 
 OUT = Path("docs/img")
 BLUE, RED, INK, MUTED, GRID = "#2F5D9B", "#BA3D1A", "#1F2E43", "#5A6678", "#E3E7ED"
@@ -72,12 +72,12 @@ def fig_splits() -> None:
 
 
 def fig_headline(s: dict) -> None:
-    views = load_views()
+    views = load_main()
     t = views[(views.role == "test") & (views.n_train == N_TRAIN_FULL) & (views.poses == "true")]
     runs = t.groupby(["scene", "design", "seed"], as_index=False)[["psnr", "depth_mae"]].mean()
     fig, axes = plt.subplots(1, 2, figsize=(8.6, 3.5))
     for ax, metric, label, scale in ((axes[0], "psnr", "PSNR on test views (dB, higher is better)", 1.0),
-                                     (axes[1], "depth_mae", "Depth error on test views (% of camera distance, lower is better)", 100 / 3.0)):
+                                     (axes[1], "depth_mae", "Depth error (% of camera distance, lower is better)", 100 / 3.0)):
         for k, sc in enumerate(SCENES):
             for seed in sorted(runs.seed.unique()):
                 pair = [runs[(runs.scene == sc) & (runs.design == de) & (runs.seed == seed)][metric].mean() * scale
@@ -96,7 +96,7 @@ def fig_headline(s: dict) -> None:
 
 
 def fig_angle(s: dict) -> None:
-    views = load_views()
+    views = load_main()
     t = views[(views.role == "test") & (views.n_train == N_TRAIN_FULL) & (views.poses == "true")]
     fig, axes = plt.subplots(1, 2, figsize=(8.6, 3.6), sharex=True)
     for ax, metric, label, scale in ((axes[0], "psnr", "PSNR (dB)", 1.0),
@@ -108,9 +108,10 @@ def fig_angle(s: dict) -> None:
         curve = s["angle_curve"]
         ax.plot([c["angle_mean"] for c in curve], [c[metric] * scale for c in curve], color=INK, lw=2,
                 marker="o", ms=4, label="mean of each angle band")
-        ax.set_xlabel("Angle from the test camera to the nearest training camera (degrees)", fontsize=9)
         ax.set_ylabel(label)
-    axes[0].legend(loc="lower center", bbox_to_anchor=(1.08, 1.02), ncol=3, fontsize=9)
+    fig.supxlabel("Angle from the test camera to the nearest training camera (degrees)", fontsize=9.5, y=-0.03)
+    fig.subplots_adjust(wspace=0.28)
+    axes[0].legend(loc="lower center", bbox_to_anchor=(1.14, 1.02), ncol=3, fontsize=9)
     _save(fig, "angle.png")
 
 
@@ -122,13 +123,15 @@ def fig_sparse(s: dict) -> None:
         for de in DESIGNS:
             y = [r[de][metric] * scale for r in s["e2"]]
             ax.plot(n, y, color=COLOUR[de], lw=2, marker="o", ms=5, label=LABEL[de])
-            ax.annotate(f"{y[-1]:.1f}", (n[-1], y[-1]), xytext=(6, 0), textcoords="offset points",
-                        va="center", fontsize=9)
+            if metric == "psnr":
+                ax.annotate(f"{y[-1]:.1f}", (n[-1], y[-1]), xytext=(7, 0), textcoords="offset points",
+                            va="center", fontsize=9)
         ax.set_xscale("log", base=2)
         ax.set_xticks(n, [str(v) for v in n])
         ax.set_xlabel("Training views")
         ax.set_ylabel(label)
-    axes[0].legend(loc="lower center", bbox_to_anchor=(1.08, 1.02), ncol=2)
+    fig.subplots_adjust(wspace=0.36)
+    axes[0].legend(loc="lower center", bbox_to_anchor=(1.18, 1.02), ncol=2)
     _save(fig, "sparse.png")
 
 
@@ -169,6 +172,8 @@ def fig_sfm() -> None:
         ax.scatter(est[:, 0], est[:, 1], s=7, color=RED, label="recovered camera", zorder=3)
         ax.set_aspect("equal"), ax.set_title(sc, fontsize=11, loc="left")
         ax.set_xticks([]), ax.set_yticks([]), ax.grid(False)
+        for sp in ax.spines.values():
+            sp.set_visible(False)
     axes[1].legend(loc="lower center", bbox_to_anchor=(0.5, -0.22), ncol=3, markerscale=1.6)
     _save(fig, "sfm.png")
 
