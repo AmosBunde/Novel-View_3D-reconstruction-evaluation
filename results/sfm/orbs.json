@@ -1,0 +1,8 @@
+{
+  "registered": 120,
+  "position_rmse": 0.004024734020260985,
+  "position_max": 0.01178131490353885,
+  "rotation_mean_deg": 0.07293254004842738,
+  "rotation_max_deg": 0.1683774159941135,
+  "points": 2978
+}
